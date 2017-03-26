@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace RegisterPlacement.DelayGraph
+namespace DelayGraph
 {
     /// <summary>
     /// Vertex in the DelayGraph. Latency selection algorithms can decide to 
@@ -9,7 +9,7 @@ namespace RegisterPlacement.DelayGraph
     /// debugging and visualization and should not have algorithms dependent on them.
     /// </summary>
     [Serializable]
-    internal class DelayGraphVertex
+    public class DelayGraphVertex
     {
         #region Properties
 
@@ -160,7 +160,7 @@ namespace RegisterPlacement.DelayGraph
     /// Enumerations of some Dfir node types that are required for the DelayGraphSolution class. 
     /// Only used while computing quality of solution. Don't use this enumerated type!
     /// </summary>
-    internal enum DelayGraphNodeType
+    public enum DelayGraphNodeType
     {
         /// <summary>
         /// Represents a FeedbackInputNode node

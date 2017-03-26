@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Runtime.Serialization;
 
-namespace RegisterPlacement.DelayGraph
+namespace DelayGraph
 {
     /// <summary>
     /// 

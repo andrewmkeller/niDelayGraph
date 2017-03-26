@@ -3,20 +3,20 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 
-namespace RegisterPlacement.DelayGraph
+namespace DelayGraph
 {
     /// <summary>
     /// Represents one solution to the latency assignment problem. 
     /// Calulates and returns the quality of the solution
     /// </summary>
-    internal class DelayGraphSolution
+    public class DelayGraphSolution
     {
         /// <summary>
         /// constructor for build DG solution
         /// </summary>
         /// <param name="graph">a delay graph</param>
         /// <param name="registeredTerminals">a hashset of nodes needing registered</param>
-        internal DelayGraphSolution(
+        public DelayGraphSolution(
             DelayGraph graph,
             HashSet<DelayGraphVertex> registeredTerminals)
         {
@@ -35,7 +35,7 @@ namespace RegisterPlacement.DelayGraph
         /// <param name="graph">The <see cref="DelayGraph"/> that is being solved by the terminals marked as registered in <paramref name="registeredTerminals"/>.</param>
         /// <param name="registeredTerminals">A set of vertices that are to be marked as registered in this solution. These registers </param>
         /// <param name="targetClockPeriod">The target clock period in PS for this soluton.</param>
-        internal DelayGraphSolution(
+        public DelayGraphSolution(
             string solutionName,
             DelayGraph graph,
             HashSet<DelayGraphVertex> registeredTerminals,
@@ -69,7 +69,7 @@ namespace RegisterPlacement.DelayGraph
         /// </summary>
         /// <param name="foundCycle">return iff found a combinational cycle</param>
         /// <returns>estimated clock period</returns>
-        internal int EstimatePeriod(out bool foundCycle)
+        public int EstimatePeriod(out bool foundCycle)
         {
             int maxPeriod = 0;
             foundCycle = false;
@@ -155,7 +155,7 @@ namespace RegisterPlacement.DelayGraph
         /// </summary>
         /// <param name="pathName">path name</param>
         /// <returns>file name</returns>
-        internal String PrintDotFile(String pathName)
+        public String PrintDotFile(String pathName)
         {
             using (var writer = new StreamWriter(path: pathName, append: false))
             {
@@ -170,7 +170,7 @@ namespace RegisterPlacement.DelayGraph
         /// </summary>
         /// <param name="graph">a delay graph</param>
         /// <returns>a value</returns>
-        internal static int MinClockPeriod(DelayGraph graph)
+        public static int MinClockPeriod(DelayGraph graph)
         {
             int maxPeriod = 0;
             foreach (var edge in graph.Edges)
@@ -185,7 +185,7 @@ namespace RegisterPlacement.DelayGraph
         /// </summary>
         /// <param name="graph">a delay graph</param>
         /// <returns>whether DG has changed</returns>
-        internal static bool PruneEdges(DelayGraph graph)
+        public static bool PruneEdges(DelayGraph graph)
         {
             bool changed = false;
 
@@ -235,7 +235,7 @@ namespace RegisterPlacement.DelayGraph
         /// <param name="throughputTotalCost">a cost</param>
         /// <param name="latencyTotalCost">a cost</param>
         /// <param name="registersTotalCost">a cost</param>
-        internal void SumCosts(
+        public void SumCosts(
             out long throughputTotalCost,
             out long latencyTotalCost,
             out long registersTotalCost)

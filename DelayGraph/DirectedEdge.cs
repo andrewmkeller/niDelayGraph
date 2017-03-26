@@ -1,23 +1,23 @@
 ﻿using System;
 
-namespace RegisterPlacement.DelayGraph
+namespace DelayGraph
 {
     /// <summary>
     /// This is a class for directed edge, to take the place of Edge in QuickGraph
     /// </summary>
     /// <typeparam name="TVertex">this is type for vertex</typeparam>
     [Serializable]
-    internal class DirectedEdge<TVertex>
+    public class DirectedEdge<TVertex>
     {
         /// <summary>
         /// this is the source of directed edge
         /// </summary>
-        internal TVertex Source { get; set; }
+        public TVertex Source { get; set; }
 
         /// <summary>
         /// this is the target of directed edge
         /// </summary>
-        internal TVertex Target { get; set; }
+        public TVertex Target { get; set; }
 
         /// <summary>
         /// constructor for directed edge

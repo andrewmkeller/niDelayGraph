@@ -2,12 +2,12 @@
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Formatters.Binary;
 
-namespace RegisterPlacement.DelayGraph
+namespace DelayGraph
 {
     /// <summary>
     /// Object to serialize a DelayGraph into Binary Format
     /// </summary>
-    internal class DelayGraphBinarySerializer
+    public class DelayGraphBinarySerializer
     {
         private DelayGraph _graph;
 

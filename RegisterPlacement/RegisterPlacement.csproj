@@ -64,16 +64,6 @@
   <ItemGroup>
     <Compile Include="Program.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-    <Compile Include="DelayGraph\DelayGraph.cs" />
-    <Compile Include="DelayGraph\DelayGraphAlgorithms.cs" />
-    <Compile Include="DelayGraph\DelayGraphBinarySerializer.cs" />
-    <Compile Include="DelayGraph\DelayGraphEdge.cs" />
-    <Compile Include="DelayGraph\DelayGraphGraphMLSerializer.cs" />
-    <Compile Include="DelayGraph\DelayGraphSolution.cs" />
-    <Compile Include="DelayGraph\DelayGraphVertex.cs" />
-    <Compile Include="DelayGraph\DirectedEdge.cs" />
-    <Compile Include="DelayGraph\DirectedGraph.cs" />
-    <Compile Include="DelayGraph\OrderedHashSet.cs" />
     <Compile Include="LatencyAssignment\LatencyAssignmentGreedy.cs" />
     <Compile Include="LatencyAssignment\ILatencyAssignment.cs" />
     <Compile Include="LatencyAssignment\LatencyAssignmentAsap.cs" />
@@ -96,11 +86,11 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
-    <None Include="DelayGraph\GraphmlSchema.xsd">
-      <SubType>Designer</SubType>
-    </None>
+    <ProjectReference Include="..\DelayGraph\DelayGraph.csproj">
+      <Project>{9cae97b9-10a3-424e-b637-e6e2caa969a9}</Project>
+      <Name>DelayGraph</Name>
+    </ProjectReference>
   </ItemGroup>
-  <ItemGroup />
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <!-- To modify your build process, add your task inside one of the targets below and uncomment it. 
        Other similar extension points exist, see Microsoft.Common.targets.

@@ -4,7 +4,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Xml.Linq;
-using RegisterPlacement.DelayGraph;
+using DelayGraph;
 using RegisterPlacement.LatencyAssignment;
 
 namespace RegisterPlacement
@@ -28,8 +28,9 @@ namespace RegisterPlacement
                 // add your own latency assigner here
             };
 
+            string dataSetsPath = Path.GetFullPath(parsedArguments.DataSetDirectory);
             List<DataSet> dataSets = new List<DataSet>();
-            FindDataSetsRecursively(Path.GetFullPath(parsedArguments.DataSetDirectory), dataSets);
+            FindDataSetsRecursively(dataSetsPath, dataSets);
 
             if (!dataSets.Any())
             {
@@ -37,8 +38,8 @@ namespace RegisterPlacement
             }
 
             List<string> algorithmNames = algorithms.Select(kv => kv.Item1).ToList();
-            string dotDirectory;
-            SetupResultsDirectories(algorithmNames, parsedArguments, out dotDirectory);
+            Directory.CreateDirectory(parsedArguments.SolutionDirectory);
+
             var resultsSummary = InitializeResultsSummary(algorithmNames);
             Stopwatch sw = new Stopwatch();
             foreach (DataSet dataSet in dataSets)
@@ -62,8 +63,6 @@ namespace RegisterPlacement
                     {
                         originalTargetClockRate = minClockPeriod;
                     }
-                    bool failed = false;
-                    var scoreCards = new Dictionary<string, LatencyAssignerScoreCard>();
                     foreach (var tuple in algorithms)
                     {
                         string algorithmName = tuple.Item1;
@@ -73,48 +72,38 @@ namespace RegisterPlacement
                         double milliseconds = sw.Elapsed.TotalMilliseconds;
                         sw.Stop();
 
-                        var solutionName = Path.GetFileNameWithoutExtension(graphAndGoal.GraphPath) + "." + algorithmName;
-
-                        DelayGraphSolution solution = new DelayGraphSolution(solutionName, graph, registeredTerminals, originalTargetClockRate);
-
-                        // for debugging
-
-                        var dotFileName = solutionName + ".dot";
-                        var dotFilePath = Path.Combine(dotDirectory, dotFileName);
-                        solution.PrintDotFile(dotFilePath);
-
-                        bool cycle;
-                        int period = solution.EstimatePeriod(out cycle);
-                        if (cycle)
+                        // writing solution XML
+                        string uniqueGraphId = ParseOutUniquifier(Path.GetFileName(graphAndGoal.GraphPath));
+                        string solutionSelectionFileName = "Solution" + uniqueGraphId + "." + algorithmName + ".xml";
+                        string graphPathWithoutDataSetPath = Path.GetDirectoryName(graphAndGoal.GraphPath.Replace(dataSetsPath,""));
+                        if (graphPathWithoutDataSetPath.StartsWith("\\"))
+                            graphPathWithoutDataSetPath = graphPathWithoutDataSetPath.Replace("\\", "");
+                        string destinationDirectory = Path.Combine(Path.GetFullPath(parsedArguments.SolutionDirectory), graphPathWithoutDataSetPath);
+                        Directory.CreateDirectory(destinationDirectory);
+                        string solutionSelectionPath = Path.Combine(destinationDirectory, solutionSelectionFileName);
+                        using (var writer = new StreamWriter(path: solutionSelectionPath, append: false))
                         {
-                            period = int.MaxValue;
+                            List<XElement> selectedNodes = new List<XElement>();
+                            foreach (var registeredTerminal in registeredTerminals)
+                            {
+                                XElement el = new XElement("VertexIdToRegister", registeredTerminal.VertexId);
+                                selectedNodes.Add(el);
+                            }
+                            XDocument solutionXML = new XDocument(
+                                new XDeclaration("1.0", "utf-8", "yes"),
+                                new XElement("Root",
+                                    new XElement("processingTimeInMilliseconds", milliseconds.ToString("r")),
+                                    new XElement("RegisterAssignments", selectedNodes.ToArray())
+                                )
+                                );
+                            solutionXML.Save(writer);
                         }
-
-                        int slack = originalTargetClockRate - period;
-                        if (slack < 0)
-                        {
-                            failed = true;
-                            resultsSummary[algorithmName].FailedCount++;
-                        }
-
-                        long throughputCost, latencyCost, registerCost;
-                        solution.SumCosts(
-                            throughputTotalCost: out throughputCost,
-                            latencyTotalCost: out latencyCost,
-                            registersTotalCost: out registerCost);
-                        var scoreCard = new LatencyAssignerScoreCard();
-                        scoreCard.RegisterResult(throughputCost, latencyCost, registerCost, period, slack, milliseconds);
-                        scoreCards[algorithmName] = scoreCard;
-
                     }
-                    TabulateAndPrintReports(algorithmNames, parsedArguments.ScoreCardDirectory, resultsSummary, graphAndGoal, originalTargetClockRate, failed, scoreCards);
                 }
             }
 
-            PrintSummaryReport(algorithmNames, parsedArguments.ScoreCardDirectory, resultsSummary);
-
-            Console.WriteLine("Scorecards written to: " + Path.GetFullPath(parsedArguments.ScoreCardDirectory));
-            Debug.WriteLine("Scorecards written to: " + Path.GetFullPath(parsedArguments.ScoreCardDirectory));
+            Console.WriteLine("Solutions written to: " + Path.GetFullPath(parsedArguments.SolutionDirectory));
+            Debug.WriteLine("Solutions written to: " + Path.GetFullPath(parsedArguments.SolutionDirectory));
         }
 
         #endregion
@@ -124,27 +113,6 @@ namespace RegisterPlacement
         private static string BuildExpectedGoalFileName(string uniquifierFromDelayGraphFileName)
         {
             return "OriginalGoals" + uniquifierFromDelayGraphFileName + ".xml";
-        }
-
-        private static void CheckAgainstOthers(List<string> latencyAssigners, Dictionary<string, LatencyAssignerScoreCard> scoreCards, string latencyAssigner, LatencyAssignerScoreCard scoreCard, out bool isBest, out bool isTied)
-        {
-            isBest = true;
-            isTied = false;
-            foreach (var next in latencyAssigners)
-            {
-                if (next != latencyAssigner && ScoreIsBetter(scoreCards[next], scoreCard))
-                {
-                    if (ScoreIsEqual(scoreCards[next], scoreCard))
-                    {
-                        isTied = true;
-                    }
-                    else
-                    {
-                        isBest = false;
-                    }
-                    break;
-                }
-            }
         }
 
         private static void FindDataSetsRecursively(string root, List<DataSet> dataSets)
@@ -182,13 +150,6 @@ namespace RegisterPlacement
             }
         }
 
-        private static string GetScoreCardPath(string scoreCardDirectoy, string algorithmName)
-        {
-            string fileName = algorithmName + "_ScoreCard.csv";
-            string filePath = Path.Combine(scoreCardDirectoy, fileName);
-            return filePath;
-        }
-
         private static IDictionary<string, ResultInformation> InitializeResultsSummary(IList<string> algorithmNames)
         {
             var dictionary = new Dictionary<string, ResultInformation>();
@@ -208,171 +169,17 @@ namespace RegisterPlacement
             return middlePiece;
         }
 
-        private static void PrintSummaryReport(IEnumerable<string> algorithmNames, string scoreCardDirectoy,
-            IDictionary<string, ResultInformation> resultsSummary)
-        {
-            string summaryPath = Path.Combine(scoreCardDirectoy, "Summary.csv");
-            if (File.Exists(summaryPath))
-            {
-                File.Delete(summaryPath);
-            }
-            using (StreamWriter stream = File.CreateText(summaryPath))
-            {
-                stream.WriteLine("Algorithm, TotalThroughputCost, TotalLatencyCost, TotalRegisterCost, TotalPeriodSum, PercentFailingPeriodConstraint, TotalExecutionTime(ms), Best, Best-Or-Tied, Failed"); // column headers
-            }
-            using (StreamWriter stream = File.AppendText(summaryPath))
-            {
-                foreach (var algorithmName in algorithmNames)
-                {
-                    string score = string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                        "{0},{1},{2},{3},{4},{5},{6},{7},{8},{9}",
-                        algorithmName,
-                        resultsSummary[algorithmName].OverallScoreCard.TotalThroughputCosts,
-                        resultsSummary[algorithmName].OverallScoreCard.TotalLatencyCosts,
-                        resultsSummary[algorithmName].OverallScoreCard.TotalRegisterCosts,
-                        resultsSummary[algorithmName].OverallScoreCard.TotalSumOfAchievedPeriods,
-                        resultsSummary[algorithmName].OverallScoreCard.PercentFailing,
-                        resultsSummary[algorithmName].OverallScoreCard.TotalExecutionTime,
-                        resultsSummary[algorithmName].BestCount,
-                        resultsSummary[algorithmName].BestOrTiedCount,
-                        resultsSummary[algorithmName].FailedCount);
-                    stream.WriteLine(score);
-                }
-            }
-        }
-
-        private static bool ScoreIsBetter(LatencyAssignerScoreCard x, LatencyAssignerScoreCard y)
-        {
-            if (x.TotalNumberFailingPeriod < y.TotalNumberFailingPeriod ||
-                (x.TotalNumberFailingPeriod == y.TotalNumberFailingPeriod &&
-                 (x.TotalThroughputCosts < y.TotalThroughputCosts ||
-                  (x.TotalThroughputCosts == y.TotalThroughputCosts &&
-                   (x.TotalLatencyCosts < y.TotalLatencyCosts ||
-                    (x.TotalLatencyCosts == y.TotalLatencyCosts &&
-                     (x.TotalRegisterCosts < y.TotalRegisterCosts ||
-                      (x.TotalRegisterCosts == y.TotalRegisterCosts &&
-                       (x.TotalSumOfAchievedPeriods < y.TotalSumOfAchievedPeriods ||
-                        (x.TotalSumOfAchievedPeriods == y.TotalSumOfAchievedPeriods &&
-                         x.TotalExecutionTime < y.TotalExecutionTime))))))))))
-            {
-                return true;
-            }
-            else
-            {
-                return false;
-            }
-        }
-
-        private static bool ScoreIsEqual(LatencyAssignerScoreCard x, LatencyAssignerScoreCard y)
-        {
-            if (x.TotalNumberFailingPeriod == y.TotalNumberFailingPeriod &&
-                x.TotalThroughputCosts == y.TotalThroughputCosts &&
-                x.TotalLatencyCosts == y.TotalLatencyCosts &&
-                x.TotalRegisterCosts == y.TotalRegisterCosts &&
-                x.TotalSumOfAchievedPeriods == y.TotalSumOfAchievedPeriods)
-            {
-                return true;
-            }
-            return false;
-        }
-
-        private static void SetupResultsDirectories(IList<string> algorithmNames, Arguments arguments, out string dotDirectory)
-        {
-            Directory.CreateDirectory(arguments.ScoreCardDirectory);
-
-            foreach (var algorithmName in algorithmNames)
-            {
-                string filePath = GetScoreCardPath(arguments.ScoreCardDirectory, algorithmName);
-                if (File.Exists(filePath))
-                {
-                    File.Delete(filePath);
-                }
-                using (StreamWriter stream = File.CreateText(filePath))
-                {
-                    stream.WriteLine(
-                        "GraphPath, ThroughputCost, LatencyCost, RegisterCost, Slack, TargetPeriod, ResultingPeriod, ExecutionTime(ms)");
-                        // column headers
-                }
-            }
-
-            dotDirectory = "DotFiles";
-            if (!Directory.Exists(dotDirectory))
-            {
-                Directory.CreateDirectory(dotDirectory);
-            }
-        }
-
-        private static void TabulateAndPrintReports(List<string> algorithmNames, 
-                                                    string scoreCardDirectoy,
-                                                    IDictionary<string, ResultInformation> resultsSummary,
-                                                    GraphAndGoalPaths graphAndGoal,
-                                                    int originalTargetClockRate,
-                                                    bool failed,
-                                                    Dictionary<string, LatencyAssignerScoreCard> scoreCards)
-        {
-            foreach (string algorithmName in algorithmNames)
-            {
-                var scoreCard = scoreCards[algorithmName];
-                int slack = originalTargetClockRate - (int)scoreCard.TotalSumOfAchievedPeriods;
-                if (failed)
-                {
-                    // do not sum costs for failed test - no comparison
-                    resultsSummary[algorithmName].OverallScoreCard.RegisterResult(0, 0, 0, 0, slack, scoreCard.TotalExecutionTime);
-                }
-                else
-                {
-                    // sum costs for passed test
-                    resultsSummary[algorithmName].OverallScoreCard.RegisterResult(scoreCard.TotalThroughputCosts,
-                                                                      scoreCard.TotalLatencyCosts,
-                                                                      scoreCard.TotalRegisterCosts,
-                                                                      (int)scoreCard.TotalSumOfAchievedPeriods,
-                                                                      slack,
-                                                                      scoreCard.TotalExecutionTime);
-                }
-
-                bool best;
-                bool tied;
-                CheckAgainstOthers(algorithmNames, scoreCards, algorithmName, scoreCard, out best, out tied);
-
-                // count how many best and best-or-tied tests for each assigner
-                if (best)
-                {
-                    resultsSummary[algorithmName].BestOrTiedCount++;
-                    if (!tied)
-                    {
-                        resultsSummary[algorithmName].BestCount++;
-                    }
-                }
-
-                string filePath = GetScoreCardPath(scoreCardDirectoy, algorithmName);
-                using (StreamWriter stream = File.AppendText(filePath))
-                {
-                    string score = string.Format(System.Globalization.CultureInfo.InvariantCulture,
-                                                    "{0},{1},{2},{3},{4},{5},{6},{7},{8}",
-                                                    graphAndGoal.GraphPath,
-                                                    scoreCard.TotalThroughputCosts,
-                                                    scoreCard.TotalLatencyCosts,
-                                                    scoreCard.TotalRegisterCosts,
-                                                    slack,
-                                                    originalTargetClockRate,
-                                                    scoreCard.TotalSumOfAchievedPeriods,
-                                                    scoreCard.TotalExecutionTime,
-                                                    (best ? (tied ? "*" : "**") : " "));
-                    stream.WriteLine(score);
-                }
-            }
-        }
-
         private static bool TryParseCommandLine(string[] args, out Arguments arguments)
         {
             arguments = new Arguments();
             if (args.Length != 2)
             {
                 Console.WriteLine("Error: Expecting two arguments and not " + args.Length);
-                Console.WriteLine("Usage: RegisterPlacement.exe <Data Set Directory Root> <Directory For Scorecard>");
+                Console.WriteLine("Usage: RegisterPlacement.exe <Data Set Directory Root> <Directory For Solutions>");
                 Console.WriteLine(
                     "This program explores subdirectories of <Data Set Directory Root> to find delay graph data sets to try with register placement algorithms.");
-                Console.WriteLine("Various metrics are printed into the <Directory For Scorecard>.");
+                Console.WriteLine("Selection solutions are saved in the <Directory For Selection Solutions>");
+                //Console.WriteLine("Various metrics are printed into the <Directory For Scorecard>.");
                 return false;
             }
             if (!Directory.Exists(args[0]))
@@ -380,7 +187,7 @@ namespace RegisterPlacement
                 Console.WriteLine("Error: Directory does not exist: " + args[0]);
                 return false;
             }
-            arguments.ScoreCardDirectory = args[1];
+            arguments.SolutionDirectory = args[1];
             arguments.DataSetDirectory = args[0];
             return true;
         }
@@ -402,9 +209,9 @@ namespace RegisterPlacement
             internal string DataSetDirectory { get; set; }
 
             /// <summary>
-            /// The directory where the user wants to save scorecard results from the run.
+            /// The directory where the user wants to save solutions from the run.
             /// </summary>
-            internal string ScoreCardDirectory { get; set; }
+            internal string SolutionDirectory { get; set; }
 
             #endregion
         }

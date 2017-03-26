@@ -6,7 +6,7 @@ using System.Linq;
 using System.Reflection;
 using System.Xml.Linq;
 
-namespace RegisterPlacement.DelayGraph
+namespace DelayGraph
 {
     /// <summary>
     /// Object to serialize a DelayGraph into GraphML format.    
@@ -14,7 +14,7 @@ namespace RegisterPlacement.DelayGraph
     /// many popular graph packages have parsers for. All properties to serialize
     /// must be tagged with the [GraphmlAttribute] attribute; 
     /// </summary>
-    internal class DelayGraphGraphMlSerializer
+    public class DelayGraphGraphMlSerializer
     {
         private DelayGraph _graph;
 
@@ -157,7 +157,7 @@ namespace RegisterPlacement.DelayGraph
         /// </summary>
         /// <param name="graphml">location of the graphml file on disk</param>
         /// <returns>Deserialized DelayGraph object</returns>
-        internal static DelayGraph DeserializeFromGraphMl(string graphml)
+        public static DelayGraph DeserializeFromGraphMl(string graphml)
         {
             XDocument doc = XDocument.Load(graphml);
 

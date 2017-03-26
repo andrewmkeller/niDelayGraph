@@ -1,6 +1,6 @@
 ﻿using System;
 
-namespace RegisterPlacement.DelayGraph
+namespace DelayGraph
 {
     /// <summary>
     /// Edges in the DelayGraph hold the delay between the vertices.
@@ -8,7 +8,7 @@ namespace RegisterPlacement.DelayGraph
     /// keep the delay between registers less than the clock period.
     /// </summary>
     [Serializable]
-    internal class DelayGraphEdge : DirectedEdge<DelayGraphVertex>
+    public class DelayGraphEdge : DirectedEdge<DelayGraphVertex>
     {
         /// <summary>
         /// Delay between vertices

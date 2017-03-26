@@ -1,6 +1,6 @@
 ﻿using System.IO;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
-using RegisterPlacement.DelayGraph;
+using DelayGraph;
 using RegisterPlacement.LatencyAssignment;
 
 namespace Tests.RegisterPlacement
@@ -21,7 +21,7 @@ namespace Tests.RegisterPlacement
         public void RunGreedyOnTest1()
         {
             var deployedGraphPath = Path.Combine(TestContext.TestDeploymentDir, "DelayGraph_0.graphml");
-            DelayGraph graph = DelayGraphGraphMlSerializer.DeserializeFromGraphMl(deployedGraphPath);
+            DelayGraph.DelayGraph graph = DelayGraphGraphMlSerializer.DeserializeFromGraphMl(deployedGraphPath);
             LatencyAssignmentAsap algorithm = new LatencyAssignmentAsap();
             var result = algorithm.Execute(graph, 250);
             Assert.IsTrue(result.Count >= 0, "No results returned.");

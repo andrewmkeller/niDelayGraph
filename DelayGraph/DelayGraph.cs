@@ -4,14 +4,14 @@ using System.Globalization;
 using System.Linq;
 using System.Text;
 
-namespace RegisterPlacement.DelayGraph
+namespace DelayGraph
 {
     /// <summary>
     /// Provides a separate type for the graph used to store terminal vertices and the
     /// delays between them on edges.
     /// </summary>
     [Serializable]
-    internal class DelayGraph : DirectedGraph<DelayGraphVertex, DelayGraphEdge>
+    public class DelayGraph : DirectedGraph<DelayGraphVertex, DelayGraphEdge>
     {
         /// <summary>
         /// return an enumerable of forward in edges to vertex v
@@ -80,7 +80,7 @@ namespace RegisterPlacement.DelayGraph
         /// </summary>
         /// <param name="registeredTerminals">A list of terminals in the delay graph where a register has been placed</param>
         /// <returns>A dot string</returns>
-        internal string GetDotString(HashSet<DelayGraphVertex> registeredTerminals = null)
+        public string GetDotString(HashSet<DelayGraphVertex> registeredTerminals = null)
         {
             var nodeIds = Zip(Vertices, Enumerable.Range(0, Vertices.Count())).ToDictionary(kv => kv.Key, kv => kv.Value);
 

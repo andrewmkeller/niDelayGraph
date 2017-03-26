@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 
-namespace RegisterPlacement.DelayGraph
+namespace DelayGraph
 {
     /// <summary>
     /// Home brew version of a simple graph data structure to replace limited usage of QuickGraph
@@ -10,7 +10,7 @@ namespace RegisterPlacement.DelayGraph
     /// <typeparam name="TVertex">this is the vertex data type</typeparam>
     /// <typeparam name="TEdge">this is the edge data type</typeparam>
     [Serializable]
-    internal class DirectedGraph<TVertex, TEdge> where TEdge : DirectedEdge<TVertex>
+    public class DirectedGraph<TVertex, TEdge> where TEdge : DirectedEdge<TVertex>
     {
         /// <summary>
         /// private ordered hashset of vertices, so we can return list of vertices in stable order (according to their add order)
@@ -40,7 +40,7 @@ namespace RegisterPlacement.DelayGraph
         /// <summary>
         /// Property get for Vertices - bridge OrderedHashset to IEnumerable
         /// </summary>
-        internal IEnumerable<TVertex> Vertices
+        public IEnumerable<TVertex> Vertices
         {
             get
             {
@@ -54,7 +54,7 @@ namespace RegisterPlacement.DelayGraph
         /// <summary>
         /// Property get for Edges - bridge OrderedHashset to IEnumerable
         /// </summary>
-        internal IEnumerable<TEdge> Edges
+        public IEnumerable<TEdge> Edges
         {
             get
             {
@@ -71,7 +71,7 @@ namespace RegisterPlacement.DelayGraph
         /// <param name="v">this is a vertex</param>
         /// <param name="edges">return edges, null if not found</param>
         /// <returns>true iff vertex v is found</returns>
-        internal bool TryGetInEdges(TVertex v, out IEnumerable<TEdge> edges)
+        public bool TryGetInEdges(TVertex v, out IEnumerable<TEdge> edges)
         {
             VertexInfo info;
             edges = null;
@@ -90,7 +90,7 @@ namespace RegisterPlacement.DelayGraph
         /// <param name="v">this is a vertex</param>
         /// <param name="edges">return edges, null if not found</param>
         /// <returns>true iff vertex v is found</returns>
-        internal bool TryGetOutEdges(TVertex v, out IEnumerable<TEdge> edges)
+        public bool TryGetOutEdges(TVertex v, out IEnumerable<TEdge> edges)
         {
             VertexInfo info;
             edges = null;
