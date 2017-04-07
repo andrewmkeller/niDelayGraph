@@ -1,5 +1,6 @@
 import niGraphParser
 import niGraph
+import csv
 
 import sys
 import glob
@@ -64,43 +65,58 @@ def createDOT(graph, filePath):
         fp.write("n" + str(edge.source.vertexId) + " -> n" + str(edge.target.vertexId) + "\n")
     fp.write("}\n")
 
-def calculateDAGPolarPaths(graph):
+def calculateDAGPolarPaths(graph, limit=None):
     sortedVertices = topologicalSort(graph)
 
     possiblePaths = {};
     totalPaths = 0;
     for node in sortedVertices:
         #print (node.vertexId)
+        sum = 0;
         if len(node.outEdges) == 0:
             #print ("terminal")
             possiblePaths[node] = 1;
         else:
             #print("non-terminal");
-            sum = 0;
             for edge in node.outEdges:
                 if not edge.isFeedback:
                     sum = sum + possiblePaths[edge.target]
             possiblePaths[node] = sum;
         if len(node.inEdges) == 0:
             totalPaths = totalPaths + sum;
+        if limit and totalPaths > limit:
+            return -1
     return totalPaths
+
+def processPath(path, targetPeriod):
+    pass
+
+def processCycle(cycle, targetPeriod):
+    pass
 
 def main():
     sys.setrecursionlimit(10000)
 #     return
 
-    graphs = glob.glob(os.path.join(graphsDir, "*.graphml"))
+    #graphs = glob.glob(os.path.join(graphsDir, "*.graphml"))
 
-    graphs.sort(key = lambda x: int(re.match(".*DelayGraph_(\d+)\.graphml", x).group(1)))
+    #graphs.sort(key = lambda x: int(re.match(".*DelayGraph_(\d+)\.graphml", x).group(1)))
     #graphs = graphs[0:500]
 
-    graph = niGraphParser.parseGraphMlFile(graphs[0])
-    createDOT(graph, "graph0.dot")
+    #graph = niGraphParser.parseGraphMlFile(graphs[0])
+    #createDOT(graph, "graph0.dot")
+
+    graphs = []
+
+    with open("feasability.csv", 'r') as csvfile:
+        spamreader = csv.reader(csvfile)
+        for row in spamreader:
+            graphs.append(row[0])
 
     sizes = []
     times = []
 
-    fp = open("522r_asst1_results_paths_count.csv","w")
+    fp = open("constraints.csv","w")
 
     for graphPath in graphs:
         graph = niGraphParser.parseGraphMlFile(graphPath)
@@ -117,50 +133,50 @@ def main():
 
         targetPeriod = int(root.find('TargetClockPeriodInPicoSeconds').text)
 
-        startTime = time.time()
+        sourceNode = len(graph.vertices)
+        sinkNode = sourceNode + 1
 
         D=nx.DiGraph()
         for edge in graph.getEdges():
-            D.add_edge(edge.source.vertexId,edge.target.vertexId, weight=-edge.delay)
+            D.add_edge(edge.source.vertexId,edge.target.vertexId, weight=edge.delay)
 
-        #dist = defaultdict(lambda : defaultdict(lambda: float('inf')))
-        D_floyd = dense.floyd_warshall(D)
+        for vertex in graph.getVertices():
+            if len(vertex.inEdges) == 0:
+                D.add_edge(sourceNode,vertex.vertexId)
+            if len(vertex.outEdges) == 0:
+                D.add_edge(vertex.vertexId, sinkNode)
 
-        W=nx.DiGraph()
-        for edge in graph.getEdges():
-            weightValue = 1 if edge.source.isRegistered else 0
-            W.add_edge(edge.source.vertexId,edge.target.vertexId, weight=weightValue)
+        startTime = time.time()
 
-        W_floyd = dense.floyd_warshall(W)
+        # for all paths
+        print("Paths:")
+        pathsCount = 0
+        for path in nx.all_simple_paths(D, sourceNode, sinkNode):
+            pathsCount = pathsCount + 1
+            processPath(path, targetPeriod)
+            print(path)
 
-        pairExceeding = 0
-        pairs = []
-        for i,v1 in D_floyd.items():
-            for j,v2 in v1.items():
-                if v2 < - targetPeriod:
-                    startReg = 1 if graph.vertices["n" + str(i)].isRegistered else 0
-                    if W_floyd[i][j] - startReg < 1:
-                        pairExceeding = pairExceeding + 1
-                        pairs.append((i,j))
-        #for dist in floyd.values():
-        #    print (dist)
-            #if dist < - targetPeriod:
-            #    pairExceeding = pairExceeding + 1
+        print("Count:" + str(pathsCount))
 
-        print("pairs over: " + str(pairExceeding))
+        cycleCount = 0
+        cyclesLimit = 1000;
+        limitReached = False;
+        print("Cycles:")
+        for cycle in nx.simple_cycles(D):
+            processCycle(cycle, targetPeriod)
+            print(cycle)
+            cycleCount = cycleCount + 1;
+            if cyclesLimit < cycleCount:
+                limitReached = True
+                break
 
-        #allPossiblePaths = 0;
-        #for i,j in pairs:
-        #    allPossiblePaths = allPossiblePaths + \
-        #        len(list(nxPaths.all_simple_paths(W,i,j)))
+        if limitReached:
+            print ("Too many simple_cycles!")
+            continue
+        print ("Count" + str(cycleCount))
 
-        #print("possible paths over: " + str(allPossiblePaths))
-        #print (floyd)
+        totalPaths = pathsCount
 
-
-
-        #totalPaths = len(list(nx.simple_cycles(D))) # calculateDAGPolarPaths(graph)
-        totalPaths = pairExceeding
         durationTime = time.time() - startTime
 
         sizes.append(len(graph.getVertices()) + len(graph.getEdges()))
@@ -173,10 +189,11 @@ def main():
         fp.write(str(len(graph.edges))+",")
         fp.write(str(len(graph.getVertices()) + len(graph.getEdges())) + ",")
         fp.write(str(durationTime) + ",")
-        fp.write(str(totalPaths))
+        fp.write(str(totalPaths) + ",")
+        fp.write(str(cycleCount))
         fp.write("\n")
         print (graphPath, len(graph.vertices), len(graph.edges), totalPaths)
-        #break
+        break
     fp.close()
 #         print("Topological sort took " + str(durationTime) + " seconds")
 
