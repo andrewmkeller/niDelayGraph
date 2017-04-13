@@ -92,20 +92,24 @@ def calculateDAGPolarPaths(graph, limit=None):
     return totalPaths
 
 def processPath(G, graph, path, targetPeriod):
-    # the first and last nodes in a path are the polar sinks and source of the
-    # graph. Registering the second and second to last nodes will not solve
+    # Registering the first or last node in a path will not solve
     # time-step boundaries.
     results = []
     scan = deque()
     totaldelay = 0
     totalNodes = len(path)
-    # first source is the second node
-    scan.append(path[1])
-    for i in range(2,totalNodes - 1):
+    # first source is the first node
+    scan.append(path[0])
+    for i in range(1,totalNodes):
         source = scan[-1]
         sink = path[i]
-        if sink == scan[0]:
-            break
+        # check all possible cylces within a cycle by only allow end nodes to
+        # match. For example if you have cycle A-B-C-D-E-F-G, you can check
+        # C-D-E-F-G-A-B-C for time step boundary, but don't check
+        # C-D-E-F-G-A-B-C-D or beyond because these cycles do not exist
+        if len(scan) > 1 and sink == scan[1]:
+            #print("detected a cycle!")
+            scan.popleft()
         delay = G.get_edge_data(source, sink)['weight']
         totaldelay = totaldelay + delay
         scan.append(sink)
@@ -124,9 +128,9 @@ def processPath(G, graph, path, targetPeriod):
             #print("Target path =", scan)
             scanlength = len(scan)
             for j in range(1, scanlength - 1):
-                if not graph.vertices["n"+str(scan[j])].isRegistered and \
-                    not graph.vertices["n"+str(scan[j])].disallowRegister:
-                    result.append(scan[j])
+                #if not graph.vertices["n"+str(scan[j])].isRegistered and \
+                #    not graph.vertices["n"+str(scan[j])].disallowRegister:
+                result.append(scan[j])
             if len(result) > 0:
                 #print(result)
                 results.append(frozenset(result))
@@ -142,13 +146,16 @@ def processCycle(D, graph, cycle, targetPeriod):
     results = []
     # make sure there is atleast 1 register in the entire cycle
     result = []
+    abort = False
     for i in cycle:
-        if not graph.vertices["n"+str(i)].isRegistered and \
-            not graph.vertices["n"+str(i)].disallowRegister:
+        if graph.vertices["n"+str(i)].isRegistered:
+            abort = True
+            break
+        if not graph.vertices["n"+str(i)].disallowRegister:
             result.append(i)
-    if len(result) > 0:
+    if len(result) > 0 and not abort:
         results.append(frozenset(result))
-    else:
+    elif len(result) == 0 and not abort:
         print("Cycle found that cannot be broken!")
     # make sure that any path along the cycle does not exceed cycle time
     pathswithin = processPath(D, graph, cycle + cycle, targetPeriod)
@@ -156,7 +163,10 @@ def processCycle(D, graph, cycle, targetPeriod):
         results.append(pathwithin)
     return results
 
-def gurobiSolve(solutionPath, graph, constraintsSet):
+def gurobiSolve(solutionFile, graph, constraintsSet):
+    result = []
+    if len(constraintsSet) == 0:
+        return result
     GRBVars = {}
     m = Model("reg")
     constraintCount = 0
@@ -174,14 +184,53 @@ def gurobiSolve(solutionPath, graph, constraintsSet):
         m.addConstr(expr, GRB.GREATER_EQUAL, 1.0, "c"+str(constraintCount))
         constraintCount += 1
     obj = LinExpr()
-    for variable in GRBVars.values():
+    for vertex, variable in GRBVars.items():
+        # throughput cost if registered optimization
+        # obj += (graph.vertices["n"+str(vertex)].throughputCostIfRegistered)*variable
+        # total regeristers assigned optimization
         obj += (graph.vertices["n"+str(vertex)].registerCostIfRegistered)*variable
     m.setObjective(obj, GRB.MINIMIZE)
+    m.write(solutionFile)
     m.optimize()
+    result = []
     for v in m.getVars():
         print(v.varName, v.x)
+        if v.x > 0.0:
+            result.append(int(v.varName[1:]))
     print('Obj:', m.objVal)
+    return result
 
+def saveResults(solutionPath, registerAssignments, durationTime):
+    fi = open(solutionPath, "w")
+    fi.write('<?xml version="1.0" encoding="utf-8" standalone="yes"?>\n')
+    fi.write('<Root>\n')
+    fi.write('  <processingTimeInMilliseconds>' + str(durationTime) + '</processingTimeInMilliseconds>\n')
+    fi.write('  <RegisterAssignments>\n')
+    for register in registerAssignments:
+        fi.write('    <VertexIdToRegister>' + str(register) + '</VertexIdToRegister>\n')
+    fi.write('  </RegisterAssignments>\n')
+    fi.write('</Root>\n')
+    fi.close()
+
+def paths_from_node(G, source):
+    visited = [source]
+    stack = [iter(G[source])]
+    #print("finding paths from", source)
+    while stack:
+        children = stack[-1]
+        child = next(children, None)
+        #print("at child", child)
+        if child is None:
+            stack.pop()
+            visited.pop()
+        else:
+            if G.node[child]['registered'] or G.out_degree(child) == 0:
+                yield visited + [child]
+            elif child in visited:
+                yield visited
+            else:
+                visited.append(child)
+                stack.append(iter(G[child]))
 
 def main():
     sys.setrecursionlimit(10000)
@@ -195,29 +244,44 @@ def main():
     #graph = niGraphParser.parseGraphMlFile(graphs[0])
     #createDOT(graph, "graph0.dot")
 
-    graphs = []
+    #graphs = []
 
-    with open("feasability.csv", 'r') as csvfile:
-        spamreader = csv.reader(csvfile)
-        for row in spamreader:
-            graphs.append(row[0])
+    #with open("constraints_rebuild.csv", 'r') as csvfile:
+    #    spamreader = csv.reader(csvfile)
+    #    for row in spamreader:
+    #        graphs.append(row[0])
 
-    #graphs = graphs[0:3]
+    graphs = glob.glob(os.path.join(graphsDir, "*.graphml"))
+    graphs.sort(key = lambda x: int(re.match(".*DelayGraph_(\d+)\.graphml", x).group(1)))
 
+    graphPreviouslyProcessed = glob.glob(os.path.join("../oldAFAPsolutions","*.afap.xml"))
+    graphPreviouslyProcessedSet = set()
+    for graph in graphPreviouslyProcessed:
+        graphPreviouslyProcessedSet.add(int(re.match(".*_(\d+)\.afap.xml", graph).group(1)))
+
+    #graphs = graphs[int(sys.argv[1]):int(sys.argv[1])+1]
+    #graphPreviouslyProcessedSet = set([1134])
     sizes = []
     times = []
 
-    fp = open("constraints.csv","w")
+    fp = open("constraints_rebuild.csv","w")
+    fp.write("Path,# vertices,# edges,# paths,# path constr,# unique path constr,path time,# cycles,# cycles constr,# unique cycle constr,cycle time,gurobi time,duration time\n")
 
     for graphPath in graphs:
-        graph = niGraphParser.parseGraphMlFile(graphPath)
 
         pathMatch = re.match("(.*)DelayGraph(_\d+)\.graphml", graphPath)
 
         originalTargetPath = pathMatch.group(1) + "OriginalGoals" + \
                                 pathMatch.group(2) + ".xml"
 
-        solutionPath = "..\\Solutions\\Solution_" + pathMatch.group(2) + ".afap.xml"
+        if int(pathMatch.group(2)[1:]) not in graphPreviouslyProcessedSet:
+            continue
+
+        graph = niGraphParser.parseGraphMlFile(graphPath)
+
+        solutionPath = "..\\Solutions\\Solution" + pathMatch.group(2) + ".afap.xml"
+
+        gurobiFile = "Gurobi" + pathMatch.group(2) + ".lp"
 
         print(originalTargetPath)
 
@@ -226,42 +290,57 @@ def main():
 
         targetPeriod = int(root.find('TargetClockPeriodInPicoSeconds').text)
 
-        sourceNode = len(graph.vertices)
-        sinkNode = sourceNode + 1
+        maxDelay = 0
+        for edge in graph.getEdges():
+            if edge.delay > maxDelay:
+                maxDelay = edge.delay
+
+        if maxDelay > targetPeriod:
+            targetPeriod = maxDelay
 
         D=nx.DiGraph()
         for edge in graph.getEdges():
             D.add_edge(edge.source.vertexId,edge.target.vertexId, weight=edge.delay)
 
         for vertex in graph.getVertices():
-            if len(vertex.inEdges) == 0:
-                D.add_edge(sourceNode,vertex.vertexId)
-            if len(vertex.outEdges) == 0:
-                D.add_edge(vertex.vertexId, sinkNode)
+            D.add_node(vertex.vertexId,registered=vertex.isRegistered)
 
-        startTime = time.time()
+        startTimePaths = time.time()
         constraintsSet = set()
         pathConstraintsCount = 0;
         # for all paths
-        print("Paths:")
         pathsCount = 0
-        for path in nx.all_simple_paths(D, sourceNode, sinkNode):
-            pathsCount = pathsCount + 1
-            #print(path)
-            pathConstraints = processPath(D, graph, path, targetPeriod)
-            for pathConstraint in pathConstraints:
-                constraintsSet.add(pathConstraint)
-                pathConstraintsCount = pathConstraintsCount + 1
+        abort = False
+        for vertex in D.nodes(data=True):
+            if (D.in_degree(vertex[0]) == 0 or vertex[1]['registered']):
+                #print (vertex)
+                for path in paths_from_node(D, vertex[0]):
+                    pathsCount = pathsCount + 1
+                    if pathsCount > 10000:
+                        abort = True
+                        break
+                    #print(path)
+                    pathConstraints = processPath(D, graph, path, targetPeriod)
+                    for pathConstraint in pathConstraints:
+                        #print ("C:", pathConstraint)
+                        constraintsSet.add(pathConstraint)
+                        pathConstraintsCount = pathConstraintsCount + 1
+        if abort:
+            print ("To many paths!")
+            continue
+        stopTimePaths = time.time()
+        print("Paths:")
         print("Count: " + str(pathsCount))
-        for constraint in constraintsSet:
-            print(constraint)
-        print ("Constraints count =", len(constraintsSet), pathConstraintsCount)
-
+        print("pathConstraintsCount =", pathConstraintsCount)
+#        for constraint in constraintsSet:
+#            print(constraint)
+        print ("uniqueConstraints count =", len(constraintsSet))
+        constraintsBeforeCycle = len(constraintsSet)
+        startTimeCycles = time.time()
         cycleCount = 0
-        cyclesLimit = 1000;
+        cyclesLimit = 10000;
         cycleConstraintsCount = 0
         limitReached = False;
-        print("Cycles:")
         for cycle in nx.simple_cycles(D):
             #print(cycle)
             cycleConstraints = processCycle(D, graph, cycle, targetPeriod)
@@ -276,17 +355,25 @@ def main():
         if limitReached:
             print ("Too many simple_cycles!")
             continue
-        print ("Count" + str(cycleCount))
-        for constraint in constraintsSet:
-            print(constraint)
-        print ("Constraints count =", len(constraintsSet), cycleConstraintsCount)
+        stopTimeCycles = time.time()
+        print("Cycles:")
+        print ("Count: " + str(cycleCount))
+        print("CycleConstaints = ", cycleConstraintsCount)
+        #for constraint in constraintsSet:
+        #    print(constraint)
+        print ("uniqueConstraints count =", len(constraintsSet) - constraintsBeforeCycle)
 
-        totalPaths = pathsCount
+        startTimeGurobi = time.time()
+        registerAssignments = gurobiSolve(gurobiFile, graph, constraintsSet)
+        stopTimeGurobi = time.time()
 
+        pathsTime = stopTimePaths - startTimePaths
+        cyclesTime = stopTimeCycles - startTimeCycles
+        gurobiTime = stopTimeGurobi - startTimeGurobi
 
-        gurobiSolve(solutionPath, graph, constraintsSet)
+        durationTime = pathsTime + cyclesTime + gurobiTime
 
-        durationTime = time.time() - startTime
+        saveResults(solutionPath, registerAssignments, durationTime * 1000)
 
         sizes.append(len(graph.getVertices()) + len(graph.getEdges()))
         times.append(durationTime)
@@ -294,14 +381,28 @@ def main():
         #longestPath = longestPathFromTopolSort(sortedVertices)
 
         fp.write(graphPath + ",")
+
         fp.write(str(len(graph.vertices))+",")
         fp.write(str(len(graph.edges))+",")
-        fp.write(str(len(graph.getVertices()) + len(graph.getEdges())) + ",")
-        fp.write(str(durationTime) + ",")
-        fp.write(str(totalPaths) + ",")
-        fp.write(str(cycleCount))
+
+        fp.write(str(pathsCount) + ",")
+        fp.write(str(pathConstraintsCount) + ",")
+        fp.write(str(constraintsBeforeCycle) + ",")
+        fp.write(str(pathsTime * 1000) + ",")
+
+        fp.write(str(cycleCount) + ",")
+        fp.write(str(cycleConstraintsCount) + ",")
+        fp.write(str(len(constraintsSet) - constraintsBeforeCycle) + ",")
+        fp.write(str(cyclesTime * 1000) + ",")
+
+        fp.write(str(gurobiTime * 1000) + ",")
+
+
+
+        fp.write(str(durationTime * 1000) + ",")
         fp.write("\n")
-        print (graphPath, len(graph.vertices), len(graph.edges), totalPaths)
+        fp.flush()
+        #print (graphPath, len(graph.vertices), len(graph.edges), totalPaths)
         #break
     fp.close()
 #         print("Topological sort took " + str(durationTime) + " seconds")

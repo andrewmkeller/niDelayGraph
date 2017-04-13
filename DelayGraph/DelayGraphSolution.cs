@@ -69,7 +69,7 @@ namespace DelayGraph
         /// </summary>
         /// <param name="foundCycle">return iff found a combinational cycle</param>
         /// <returns>estimated clock period</returns>
-        public int EstimatePeriod(out bool foundCycle)
+        public int EstimatePeriod(out bool foundCycle, int targetClockPeriod = 0, List<DelayGraphVertex> longestPath = null)
         {
             int maxPeriod = 0;
             foundCycle = false;
@@ -107,6 +107,58 @@ namespace DelayGraph
                     if (cycle)
                     {
                         foundCycle = true;
+                    }
+                }
+            }
+
+            if(targetClockPeriod > 0 && maxPeriod > targetClockPeriod && foundCycle == false)
+            {
+                int maxDelay = -1;
+                DelayGraphVertex longestPathStart = null;
+                foreach (var entry in computedDelays)
+                {
+                    if (entry.Value > maxDelay)
+                    {
+                        maxDelay = entry.Value;
+                        longestPathStart = entry.Key;
+                    }
+                }
+                longestPath.Add(longestPathStart);
+                bool endFound = false;
+                while(endFound == false)
+                {
+                    DelayGraphVertex lastElement = longestPath.Last();
+                    IEnumerable<DelayGraphEdge> edges;
+                    if(!Graph.TryGetOutEdges(lastElement, out edges) || edges == null || edges.Count() == 0)
+                    {
+                        endFound = true;
+                    }
+                    else
+                    {
+                        maxDelay = -1;
+                        DelayGraphVertex longestPathNext = null;
+                        foreach (var edge in edges)
+                        {
+                            DelayGraphVertex next = edge.Target;
+                            int nextDelay = 0;
+                            if (!Registered(next))
+                            {
+                                if (!computedDelays.TryGetValue(next, out nextDelay))
+                                {
+                                    throw new Exception("Cannot find Key: next should have been processed and found in ComputeDelays");
+                                }
+                            }
+                            if (maxDelay < edge.Delay + nextDelay)
+                            {
+                                maxDelay = edge.Delay + nextDelay;
+                                longestPathNext = next;
+                            }
+                        }
+                        longestPath.Add(longestPathNext);
+                        if (Registered(longestPathNext))
+                        {
+                            endFound = true;
+                        }
                     }
                 }
             }

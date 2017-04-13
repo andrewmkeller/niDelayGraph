@@ -45,6 +45,21 @@ namespace RegisterPlacement
             {
                 foreach (var graphGoalsAndSolutions in dataSet.GraphsGoalsAndSolutionsFilePaths)
                 {
+                    // If not all algorithms are performed on a graph, do not process the graph.
+                    bool abortGraph = false;
+                    foreach (var name in algorithmNames)
+                    {
+                        if (graphGoalsAndSolutions.SolutionPaths.ContainsKey(name) == false)
+                        {
+                            abortGraph = true;
+                            break;
+                        }
+                    }
+                    if (abortGraph == true)
+                    {
+                        continue;
+                    }
+
                     DelayGraph.DelayGraph graph = DelayGraphGraphMlSerializer.DeserializeFromGraphMl(graphGoalsAndSolutions.GraphPath);
 
                     XDocument doc = XDocument.Load(graphGoalsAndSolutions.GoalPath);
@@ -98,7 +113,8 @@ namespace RegisterPlacement
                         solution.PrintDotFile(dotFilePath);
 
                         bool cycle;
-                        int period = solution.EstimatePeriod(out cycle);
+                        List<DelayGraphVertex> longestPath = new List<DelayGraphVertex>();
+                        int period = solution.EstimatePeriod(out cycle, originalTargetClockRate, longestPath);
                         if (cycle)
                         {
                             period = int.MaxValue;
@@ -109,6 +125,15 @@ namespace RegisterPlacement
                         {
                             failed = true;
                             resultsSummary[algorithmName].FailedCount++;
+                            if (longestPath.Count() > 0)
+                            {
+                                Console.WriteLine("Failed to meet timing: " + algorithmName + " " + graphGoalsAndSolutions.GraphPath);
+                                foreach (var vertex in longestPath)
+                                {
+                                    Console.Write(vertex.VertexId.ToString() + " ");
+                                }
+                                Console.Write('\n');
+                            }
                         }
 
                         long throughputCost, latencyCost, registerCost;

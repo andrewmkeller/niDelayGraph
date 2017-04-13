@@ -92,7 +92,7 @@ def main():
     graphs = glob.glob(os.path.join(graphsDir, "*.graphml"))
 
     graphs.sort(key = lambda x: int(re.match(".*DelayGraph_(\d+)\.graphml", x).group(1)))
-    #graphs = graphs[0:500]
+    graphs = graphs[23:24]
 
     graph = niGraphParser.parseGraphMlFile(graphs[0])
     createDOT(graph, "graph0.dot")
