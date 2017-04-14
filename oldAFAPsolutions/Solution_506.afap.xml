@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<Root>
+  <processingTimeInMilliseconds>61.80000305175781</processingTimeInMilliseconds>
+  <RegisterAssignments>
+    <VertexIdToRegister>48</VertexIdToRegister>
+    <VertexIdToRegister>62</VertexIdToRegister>
+    <VertexIdToRegister>105</VertexIdToRegister>
+    <VertexIdToRegister>66</VertexIdToRegister>
+  </RegisterAssignments>
+</Root>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8" standalone="yes"?>
+<Root>
+  <processingTimeInMilliseconds>41.99957847595215</processingTimeInMilliseconds>
+  <RegisterAssignments>
+    <VertexIdToRegister>200</VertexIdToRegister>
+    <VertexIdToRegister>75</VertexIdToRegister>
+    <VertexIdToRegister>168</VertexIdToRegister>
+    <VertexIdToRegister>187</VertexIdToRegister>
+    <VertexIdToRegister>161</VertexIdToRegister>
+    <VertexIdToRegister>159</VertexIdToRegister>
+    <VertexIdToRegister>146</VertexIdToRegister>
+    <VertexIdToRegister>139</VertexIdToRegister>
+    <VertexIdToRegister>196</VertexIdToRegister>
+    <VertexIdToRegister>152</VertexIdToRegister>
+    <VertexIdToRegister>147</VertexIdToRegister>
+    <VertexIdToRegister>199</VertexIdToRegister>
+    <VertexIdToRegister>201</VertexIdToRegister>
+    <VertexIdToRegister>142</VertexIdToRegister>
+  </RegisterAssignments>
+</Root>
