@@ -163,7 +163,7 @@ def processCycle(D, graph, cycle, targetPeriod):
         results.append(pathwithin)
     return results
 
-def gurobiSolve(solutionFile, graph, constraintsSet):
+def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
     result = []
     if len(constraintsSet) == 0:
         return result
@@ -183,21 +183,160 @@ def gurobiSolve(solutionFile, graph, constraintsSet):
             #(graph.verticies["n"+str(vertex)].registerCostIfRegistered)
         m.addConstr(expr, GRB.GREATER_EQUAL, 1.0, "c"+str(constraintCount))
         constraintCount += 1
+
+    # I should put this next step into its own function...
+    # Taking care of siblings
+    constrVars = list(GRBVars.keys())
+    siblingSet = set()
+    for constrVar in constrVars:
+        if constrVar not in siblingSet:
+            siblingSet.add(constrVar)
+            currentVertex = graph.vertices["n"+str(constrVar)]
+            nodeId = currentVertex.nodeUniqueId
+            siblings = []
+            for candidate in graph.getVertices():
+                if candidate.nodeUniqueId != nodeId or candidate.isRegistered or \
+                    candidate.isInputTerminal != currentVertex.isInputTerminal or \
+                    candidate == currentVertex:
+                    continue
+                siblings.append(candidate.vertexId)
+            if len(siblings) > 0:
+                GRBVar = GRBVars[constrVar]
+                for sibling in siblings:
+                    siblingSet.add(sibling)
+                    siblingVar = None
+                    if sibling in GRBVars:
+                        siblingVar = GRBVars[sibling]
+                    else:
+                        siblingVar = m.addVar(vtype=GRB.BINARY, name="x"+str(sibling))
+                        GRBVars[sibling] = siblingVar
+                        expr = LinExpr()
+                        expr += 1.0*siblingVar
+                        expr += -1.0*GRBVar
+                        m.addConstr(expr, GRB.EQUAL, 0.0, "c"+str(constraintCount))
+                        constraintCount += 1
+
+
     obj = LinExpr()
+    default = False
+    GRBVarsSet = set(GRBVars.keys())
+
+    # optimizing throughput
+    throuputConstrCount = 0
+    throughputConstrVars = []
+    for cycle in cycles:
+        fixedCost = 0
+        expr = LinExpr()
+        expressionCount = 0
+        for node in cycle:
+            if node not in GRBVarsSet:
+                if graph.vertices["n"+str(node)].isRegistered:
+                    fixedCost += graph.vertices["n"+str(node)].throughputCostIfRegistered
+            else:
+                cost = graph.vertices["n"+str(node)].throughputCostIfRegistered
+                if cost > 0:
+                    expr += cost*GRBVars[node]
+                    expressionCount += 1
+        if expressionCount > 0 or fixedCost > 0:
+            throughputConstr = m.addVar(name="t"+str(throuputConstrCount))
+            expr += -1.0*throughputConstr
+            m.addConstr(expr, GRB.EQUAL, -fixedCost, "tc"+str(throuputConstrCount))
+            throughputConstrVars.append(throughputConstr)
+            throuputConstrCount += 1
+    tMax = m.addVar(name="tmax")
+    if throuputConstrCount > 0:
+        count = 0
+        for throughputConstrVar in throughputConstrVars:
+            expr = LinExpr()
+            expr += 1.0*throughputConstrVar
+            expr += -1.0*tMax
+            m.addConstr(expr, GRB.LESS_EQUAL, 0.0, "tmaxc"+str(count))
+            count += 1
+        #obj += 1.0*tMax
+    else:
+        expr = LinExpr()
+        expr += 1.0*tMax
+        m.addConstr(expr, GRB.EQUAL, 0.0, "tmaxc")
+
+    # Path restrictions
+    latencyConstrCount = 0
+    latencyConstrVars = []
+    for path in paths:
+        #print(path)
+        fixedCost = 0
+        expr = LinExpr()
+        expressionCount = 0
+        for node in path:
+            if node not in GRBVarsSet:
+                if graph.vertices["n"+str(node)].isRegistered:
+                    fixedCost += graph.vertices["n"+str(node)].latencyCostIfRegistered
+            else:
+                cost = graph.vertices["n"+str(node)].latencyCostIfRegistered
+                if cost > 0:
+                    expr += cost*GRBVars[node]
+                    expressionCount += 1
+        if expressionCount > 0 or fixedCost > 0:
+            latencyConstr = m.addVar(name="l"+str(latencyConstrCount))
+            expr += -1.0*latencyConstr
+            m.addConstr(expr, GRB.EQUAL, -fixedCost, "lc"+str(latencyConstrCount))
+            latencyConstrVars.append(latencyConstr)
+            latencyConstrCount += 1
+    lMax = m.addVar(name="lmax")
+    if latencyConstrCount > 0:
+        count = 0
+        for latencyConstrVar in latencyConstrVars:
+            expr = LinExpr()
+            expr += 1.0*latencyConstrVar
+            expr += -1.0*lMax
+            m.addConstr(expr, GRB.LESS_EQUAL, 0.0, "lmaxc"+str(count))
+            count += 1
+    else:
+        expr = LinExpr()
+        expr += 1.0*lMax
+        m.addConstr(expr, GRB.EQUAL, 0.0, "lmaxc")
+
+    m.NumObj = 3
+    m.setParam(GRB.Param.ObjNumber, 0)
+    m.ObjNName = "throughput"
+    m.ObjNPriority = 2
+    m.setAttr(GRB.Attr.ObjN,list([tMax]),[1])
+    m.setParam(GRB.Param.ObjNumber, 1)
+    m.ObjNName = "latency"
+    m.ObjNPriority = 1
+    m.setAttr(GRB.Attr.ObjN,list([lMax]),[1])
+    m.setParam(GRB.Param.ObjNumber, 2)
+    m.ObjNName = "registerCost"
+    obj = LinExpr()
+
+    registerVars = []
+    registerCosts = []
     for vertex, variable in GRBVars.items():
-        # throughput cost if registered optimization
-        # obj += (graph.vertices["n"+str(vertex)].throughputCostIfRegistered)*variable
+        # obj += (graph.vertices["n"+str(vertex)].registerCostIfRegistered)*variable
         # total regeristers assigned optimization
-        obj += (graph.vertices["n"+str(vertex)].registerCostIfRegistered)*variable
-    m.setObjective(obj, GRB.MINIMIZE)
+        registerVars.append(variable)
+        registerCosts.append(graph.vertices["n"+str(vertex)].registerCostIfRegistered)
+    m.setAttr(GRB.Attr.ObjN,registerVars,registerCosts)
+    m.setObjective(obj)
+    m.ModelSense = GRB.MINIMIZE
     m.write(solutionFile)
     m.optimize()
+    if m.status == GRB.Status.INFEASIBLE:
+        # Turn presolve off to determine whether model is infeasible
+        # or unbounded
+        print('')
+        print('Model is infeasible')
+        m.computeIIS()
+        m.write("model.ilp")
+        print("IIS written to file 'model.ilp'")
+
     result = []
     for v in m.getVars():
-        print(v.varName, v.x)
+        #print(v.varName, v.x)
+        if v.varName[0:1] != "x":
+            continue
         if v.x > 0.0:
             result.append(int(v.varName[1:]))
-    print('Obj:', m.objVal)
+    #print('Obj:', m.objVal)
     return result
 
 def saveResults(solutionPath, registerAssignments, durationTime):
@@ -232,6 +371,27 @@ def paths_from_node(G, source):
                 visited.append(child)
                 stack.append(iter(G[child]))
 
+def get_input_output_paths(G):
+    for node in G.nodes_iter():
+        if G.in_degree(node) > 0:
+            continue
+        visited = [node]
+        stack = [iter(G[node])]
+        #print("finding paths from", source)
+        while stack:
+            children = stack[-1]
+            child = next(children, None)
+            #print("at child", child)
+            if child is None:
+                stack.pop()
+                visited.pop()
+            else:
+                if G.out_degree(child) == 0:
+                    yield visited + [child]
+                elif child not in visited:
+                    visited.append(child)
+                    stack.append(iter(G[child]))
+
 def main():
     sys.setrecursionlimit(10000)
 #     return
@@ -260,12 +420,12 @@ def main():
         graphPreviouslyProcessedSet.add(int(re.match(".*_(\d+)\.afap.xml", graph).group(1)))
 
     #graphs = graphs[int(sys.argv[1]):int(sys.argv[1])+1]
-    #graphPreviouslyProcessedSet = set([1134])
+    #graphPreviouslyProcessedSet = set([1017])
     sizes = []
     times = []
 
-    fp = open("constraints_rebuild.csv","w")
-    fp.write("Path,# vertices,# edges,# paths,# path constr,# unique path constr,path time,# cycles,# cycles constr,# unique cycle constr,cycle time,gurobi time,duration time\n")
+    fp = open("constraints_rebuild.csv","a")
+    #fp.write("Path,# vertices,# edges,# paths,# path constr,# unique path constr,path time,# cycles,# cycles constr,# unique cycle constr,cycle time,gurobi time,duration time\n")
 
     for graphPath in graphs:
 
@@ -274,7 +434,8 @@ def main():
         originalTargetPath = pathMatch.group(1) + "OriginalGoals" + \
                                 pathMatch.group(2) + ".xml"
 
-        if int(pathMatch.group(2)[1:]) not in graphPreviouslyProcessedSet:
+        if int(pathMatch.group(2)[1:]) not in graphPreviouslyProcessedSet or \
+            int(pathMatch.group(2)[1:]) < 1564:
             continue
 
         graph = niGraphParser.parseGraphMlFile(graphPath)
@@ -302,8 +463,14 @@ def main():
         for edge in graph.getEdges():
             D.add_edge(edge.source.vertexId,edge.target.vertexId, weight=edge.delay)
 
+        F=nx.DiGraph()
+        for edge in graph.getEdges():
+            if not edge.isFeedback:
+                F.add_edge(edge.source.vertexId,edge.target.vertexId, weight=edge.delay)
+
         for vertex in graph.getVertices():
             D.add_node(vertex.vertexId,registered=vertex.isRegistered)
+            F.add_node(vertex.vertexId,registered=vertex.isRegistered,isInputTerminal=vertex.isInputTerminal)
 
         startTimePaths = time.time()
         constraintsSet = set()
@@ -341,8 +508,10 @@ def main():
         cyclesLimit = 10000;
         cycleConstraintsCount = 0
         limitReached = False;
+        cycles = []
         for cycle in nx.simple_cycles(D):
             #print(cycle)
+            cycles.append(cycle)
             cycleConstraints = processCycle(D, graph, cycle, targetPeriod)
             cycleCount = cycleCount + 1;
             if cyclesLimit < cycleCount:
@@ -363,8 +532,25 @@ def main():
         #    print(constraint)
         print ("uniqueConstraints count =", len(constraintsSet) - constraintsBeforeCycle)
 
+        input_output_paths_iter = get_input_output_paths(F)
+
+
+        input_output_paths = []
+        inout_count = 0
+
+        for path in input_output_paths_iter:
+            input_output_paths.append(path)
+            inout_count += 1
+            if inout_count > 10000:
+                abort = True
+        if abort:
+            print ("To many in_out paths!")
+            continue
+
+        print("Number of input/output paths", len(input_output_paths))
+
         startTimeGurobi = time.time()
-        registerAssignments = gurobiSolve(gurobiFile, graph, constraintsSet)
+        registerAssignments = gurobiSolve(gurobiFile, graph, constraintsSet, cycles, input_output_paths)
         stopTimeGurobi = time.time()
 
         pathsTime = stopTimePaths - startTimePaths
