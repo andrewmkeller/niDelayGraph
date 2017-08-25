@@ -98,6 +98,7 @@ def processPath(G, graph, path, targetPeriod):
     scan = deque()
     totaldelay = 0
     totalNodes = len(path)
+    #print ("Total Nodes:", totalNodes, path)
     # first source is the first node
     scan.append(path[0])
     for i in range(1,totalNodes):
@@ -109,35 +110,41 @@ def processPath(G, graph, path, targetPeriod):
         # C-D-E-F-G-A-B-C-D or beyond because these cycles do not exist
         if len(scan) > 1 and sink == scan[1]:
             #print("detected a cycle!")
+            firstEdgeWeight = G.get_edge_data(scan[0],scan[1])['weight']
+            totaldelay = totaldelay - firstEdgeWeight
             scan.popleft()
         delay = G.get_edge_data(source, sink)['weight']
         totaldelay = totaldelay + delay
         scan.append(sink)
         if totaldelay > targetPeriod:
-            #print("Path longer than targetPeriod", targetPeriod)
+            #print("Path longer than targetPeriod", targetPeriod, totaldelay)
             #print(scan)
             firstEdgeWeight = G.get_edge_data(scan[0],scan[1])['weight']
             #print("first edge weight =", firstEdgeWeight)
             while totaldelay - firstEdgeWeight > targetPeriod:
                 #print("edge not needed, removing from path")
                 totaldelay = totaldelay - firstEdgeWeight
+                #print("  Total delay:",totaldelay)
                 scan.popleft()
+                #print (scan)
                 firstEdgeWeight = G.get_edge_data(scan[0],scan[1])['weight']
                 #print ("next edge weight =",firstEdgeWeight)
-            result = []
-            #print("Target path =", scan)
-            scanlength = len(scan)
-            for j in range(1, scanlength - 1):
-                #if not graph.vertices["n"+str(scan[j])].isRegistered and \
-                #    not graph.vertices["n"+str(scan[j])].disallowRegister:
-                result.append(scan[j])
-            if len(result) > 0:
-                #print(result)
-                results.append(frozenset(result))
-        if graph.vertices["n"+str(path[i])].isRegistered:
+            lastEdgeWeight = G.get_edge_data(scan[-2],scan[-1])['weight']
+            if totaldelay - lastEdgeWeight <= targetPeriod:
+                result = []
+                #print("Target path =", scan)
+                scanlength = len(scan)
+                for j in range(1, scanlength - 1):
+                    #if not graph.vertices["n"+str(scan[j])].isRegistered and \
+                    #    not graph.vertices["n"+str(scan[j])].disallowRegister:
+                    result.append(scan[j])
+                if len(result) > 0:
+                    #print(result)
+                    results.append(frozenset(result))
+        if graph.vertices["n"+str(sink)].isRegistered:
 
             scan.clear()
-            scan.append(path[i])
+            scan.append(sink)
             totaldelay = 0
     #print("Total constraints found in path =", len(results))
     return results
@@ -164,6 +171,7 @@ def processCycle(D, graph, cycle, targetPeriod):
     return results
 
 def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
+    print("GUROBI VERSION:", gurobi.version())
     result = []
     if len(constraintsSet) == 0:
         return result
@@ -190,6 +198,7 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
     siblingSet = set()
     for constrVar in constrVars:
         if constrVar not in siblingSet:
+            #print ("  Sibling Constraint:", constrVar)
             siblingSet.add(constrVar)
             currentVertex = graph.vertices["n"+str(constrVar)]
             nodeId = currentVertex.nodeUniqueId
@@ -201,8 +210,10 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
                     continue
                 siblings.append(candidate.vertexId)
             if len(siblings) > 0:
+                #print("    Siblings", siblings)
                 GRBVar = GRBVars[constrVar]
-                for sibling in siblings:
+                for i in range(len(siblings)):
+                    sibling = siblings[i]
                     siblingSet.add(sibling)
                     siblingVar = None
                     if sibling in GRBVars:
@@ -210,12 +221,25 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
                     else:
                         siblingVar = m.addVar(vtype=GRB.BINARY, name="x"+str(sibling))
                         GRBVars[sibling] = siblingVar
+                    expr = LinExpr()
+                    expr += 1.0*siblingVar
+                    expr += -1.0*GRBVar
+                    m.addConstr(expr, GRB.EQUAL, 0.0, "c"+str(constraintCount))
+                    constraintCount += 1
+                    for j in range(i+1,len(siblings)):
                         expr = LinExpr()
                         expr += 1.0*siblingVar
-                        expr += -1.0*GRBVar
+                        
+                        sibling2 = siblings[j]
+                        if sibling2 in GRBVars:
+                            siblingVar2 = GRBVars[sibling2]
+                        else:
+                            siblingVar2 = m.addVar(vtype=GRB.BINARY, name="x"+str(sibling2))
+                            GRBVars[sibling2] = siblingVar2
+                        
+                        expr += -1.0*siblingVar2
                         m.addConstr(expr, GRB.EQUAL, 0.0, "c"+str(constraintCount))
                         constraintCount += 1
-
 
     obj = LinExpr()
     default = False
@@ -228,6 +252,7 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
         fixedCost = 0
         expr = LinExpr()
         expressionCount = 0
+        #print ("  ThroughputCycle:", cycle)
         for node in cycle:
             if node not in GRBVarsSet:
                 if graph.vertices["n"+str(node)].isRegistered:
@@ -258,6 +283,8 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
         expr += 1.0*tMax
         m.addConstr(expr, GRB.EQUAL, 0.0, "tmaxc")
 
+    m.setObjectiveN(tMax,0,2, name="throughputCost")
+        
     # Path restrictions
     latencyConstrCount = 0
     latencyConstrVars = []
@@ -294,29 +321,34 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
         expr = LinExpr()
         expr += 1.0*lMax
         m.addConstr(expr, GRB.EQUAL, 0.0, "lmaxc")
+        
+    m.setObjectiveN(lMax,1,1, name="latencyCost")
 
-    m.NumObj = 3
-    m.setParam(GRB.Param.ObjNumber, 0)
-    m.ObjNName = "throughput"
-    m.ObjNPriority = 2
-    m.setAttr(GRB.Attr.ObjN,list([tMax]),[1])
-    m.setParam(GRB.Param.ObjNumber, 1)
-    m.ObjNName = "latency"
-    m.ObjNPriority = 1
-    m.setAttr(GRB.Attr.ObjN,list([lMax]),[1])
-    m.setParam(GRB.Param.ObjNumber, 2)
-    m.ObjNName = "registerCost"
+    #m.NumObj = 3
+    #m.setParam(GRB.Param.ObjNumber, 0)
+    #m.ObjNName = "throughput"
+    #m.ObjNPriority = 2
+    #m.setAttr(GRB.Attr.ObjN,list([tMax]),[1])
+    #m.setParam(GRB.Param.ObjNumber, 1)
+    #m.ObjNName = "latency"
+    #m.ObjNPriority = 1
+    #m.setAttr(GRB.Attr.ObjN,list([lMax]),[1])
+    #m.setParam(GRB.Param.ObjNumber, 2)
+    #m.ObjNName = "registerCost"
     obj = LinExpr()
 
     registerVars = []
     registerCosts = []
     for vertex, variable in GRBVars.items():
-        # obj += (graph.vertices["n"+str(vertex)].registerCostIfRegistered)*variable
+        obj += (graph.vertices["n"+str(vertex)].registerCostIfRegistered)*variable
         # total regeristers assigned optimization
-        registerVars.append(variable)
-        registerCosts.append(graph.vertices["n"+str(vertex)].registerCostIfRegistered)
-    m.setAttr(GRB.Attr.ObjN,registerVars,registerCosts)
-    m.setObjective(obj)
+        #registerVars.append(variable)
+        #registerCosts.append(graph.vertices["n"+str(vertex)].registerCostIfRegistered)
+    #obj.addTerms(registerCosts, registerVars)
+    #m.setAttr(GRB.Attr.ObjN,registerVars,registerCosts)
+    m.setObjectiveN(obj,2,0,name="registerCost")
+    
+    
     m.ModelSense = GRB.MINIMIZE
     m.write(solutionFile)
     m.optimize()
@@ -331,10 +363,11 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
 
     result = []
     for v in m.getVars():
-        #print(v.varName, v.x)
+        
         if v.varName[0:1] != "x":
             continue
         if v.x > 0.0:
+            #print(v.varName)
             result.append(int(v.varName[1:]))
     #print('Obj:', m.objVal)
     return result
@@ -435,7 +468,7 @@ def main():
                                 pathMatch.group(2) + ".xml"
 
         if int(pathMatch.group(2)[1:]) not in graphPreviouslyProcessedSet or \
-            int(pathMatch.group(2)[1:]) < 1564:
+            int(pathMatch.group(2)[1:]) == 1549 or int(pathMatch.group(2)[1:]) == 1563:
             continue
 
         graph = niGraphParser.parseGraphMlFile(graphPath)
@@ -456,8 +489,10 @@ def main():
             if edge.delay > maxDelay:
                 maxDelay = edge.delay
 
+        print("Original Target Period:", targetPeriod)
         if maxDelay > targetPeriod:
             targetPeriod = maxDelay
+            print ("Updated Target Period (to match max edge delay):",targetPeriod)
 
         D=nx.DiGraph()
         for edge in graph.getEdges():
@@ -489,7 +524,7 @@ def main():
                     #print(path)
                     pathConstraints = processPath(D, graph, path, targetPeriod)
                     for pathConstraint in pathConstraints:
-                        #print ("C:", pathConstraint)
+                        #print ("  C:", pathConstraint)
                         constraintsSet.add(pathConstraint)
                         pathConstraintsCount = pathConstraintsCount + 1
         if abort:
@@ -541,7 +576,7 @@ def main():
         for path in input_output_paths_iter:
             input_output_paths.append(path)
             inout_count += 1
-            if inout_count > 10000:
+            if inout_count > 32768:
                 abort = True
         if abort:
             print ("To many in_out paths!")
@@ -559,7 +594,7 @@ def main():
 
         durationTime = pathsTime + cyclesTime + gurobiTime
 
-        saveResults(solutionPath, registerAssignments, durationTime * 1000)
+        saveResults(solutionPath, registerAssignments, 0.0) #durationTime * 1000)
 
         sizes.append(len(graph.getVertices()) + len(graph.getEdges()))
         times.append(durationTime)

@@ -1,0 +1,4 @@
+Algorithm, TotalThroughputCost, TotalLatencyCost, TotalRegisterCost, TotalPeriodSum, PercentFailingPeriodConstraint, TotalExecutionTime(ms), Best, Best-Or-Tied, Failed
+afap,5218793,8114700,161475,4748584,0,0,1626,1626,0
+asap,7740125,12951936,1211901,4002536,0.0100710900473934,479.6086,2,398,17
+greedy,5460900,8381446,413027,4733153,0,3079.4244,60,1163,0
