@@ -158,8 +158,8 @@ def processCycle(D, graph, cycle, targetPeriod):
         if graph.vertices["n"+str(i)].isRegistered:
             abort = True
             break
-        if not graph.vertices["n"+str(i)].disallowRegister:
-            result.append(i)
+        #if not graph.vertices["n"+str(i)].disallowRegister: # this constraint is not observed by ni algorithms
+        result.append(i)
     if len(result) > 0 and not abort:
         results.append(frozenset(result))
     elif len(result) == 0 and not abort:
@@ -171,7 +171,7 @@ def processCycle(D, graph, cycle, targetPeriod):
     return results
 
 def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
-    print("GUROBI VERSION:", gurobi.version())
+    #print("GUROBI VERSION:", gurobi.version())
     result = []
     if len(constraintsSet) == 0:
         return result
@@ -283,7 +283,6 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
         expr += 1.0*tMax
         m.addConstr(expr, GRB.EQUAL, 0.0, "tmaxc")
 
-    m.setObjectiveN(tMax,0,2, name="throughputCost")
         
     # Path restrictions
     latencyConstrCount = 0
@@ -321,20 +320,8 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
         expr = LinExpr()
         expr += 1.0*lMax
         m.addConstr(expr, GRB.EQUAL, 0.0, "lmaxc")
-        
-    m.setObjectiveN(lMax,1,1, name="latencyCost")
 
-    #m.NumObj = 3
-    #m.setParam(GRB.Param.ObjNumber, 0)
-    #m.ObjNName = "throughput"
-    #m.ObjNPriority = 2
-    #m.setAttr(GRB.Attr.ObjN,list([tMax]),[1])
-    #m.setParam(GRB.Param.ObjNumber, 1)
-    #m.ObjNName = "latency"
-    #m.ObjNPriority = 1
-    #m.setAttr(GRB.Attr.ObjN,list([lMax]),[1])
-    #m.setParam(GRB.Param.ObjNumber, 2)
-    #m.ObjNName = "registerCost"
+
     obj = LinExpr()
 
     registerVars = []
@@ -346,8 +333,12 @@ def gurobiSolve(solutionFile, graph, constraintsSet, cycles, paths):
         #registerCosts.append(graph.vertices["n"+str(vertex)].registerCostIfRegistered)
     #obj.addTerms(registerCosts, registerVars)
     #m.setAttr(GRB.Attr.ObjN,registerVars,registerCosts)
-    m.setObjectiveN(obj,2,0,name="registerCost")
     
+    #m.setObjective(tMax)
+    
+    m.setObjectiveN(tMax,0,2, name="throughputCost")        
+    m.setObjectiveN(lMax,1,1, name="latencyCost")
+    m.setObjectiveN(obj,2,0,name="registerCost")
     
     m.ModelSense = GRB.MINIMIZE
     m.write(solutionFile)
